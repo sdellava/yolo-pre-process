@@ -458,6 +458,22 @@ def build_tiles(image: np.ndarray, rows: int, cols: int, overlap: float) -> list
     return tiles
 
 
+def build_upper_quadrant_tiles(image: np.ndarray, cols: int, overlap: float) -> list[Tile]:
+    height, width = image.shape[:2]
+    upper_height = max(1, height // 2)
+    cols = max(cols, 1)
+    overlap = float(np.clip(overlap, 0.0, 0.8))
+
+    tile_width = compute_tile_length(width, cols, overlap)
+    x_starts = compute_tile_starts(width, tile_width, cols)
+
+    tiles: list[Tile] = []
+    for index, x in enumerate(x_starts):
+        tile_image = image[0:upper_height, x : x + tile_width].copy()
+        tiles.append(Tile(index=index, x=x, y=0, width=tile_image.shape[1], height=tile_image.shape[0], image=tile_image))
+    return tiles
+
+
 def normalize_map(values: np.ndarray) -> np.ndarray:
     values = values.astype(np.float32)
     minimum = float(values.min())
@@ -505,8 +521,13 @@ def build_attention_tiles(
     cols: int,
     max_tiles: int,
     tile_scale: float,
+    region_y1: int = 0,
+    region_y2: int | None = None,
 ) -> list[Tile]:
     height, width = image.shape[:2]
+    region_y1 = int(np.clip(region_y1, 0, height - 1))
+    region_y2 = height if region_y2 is None else int(np.clip(region_y2, region_y1 + 1, height))
+    region_height = region_y2 - region_y1
     rows = max(rows, 1)
     cols = max(cols, 1)
     max_tiles = max(max_tiles, 0)
@@ -514,18 +535,18 @@ def build_attention_tiles(
     if max_tiles == 0:
         return []
 
-    cell_height = height / rows
+    cell_height = region_height / rows
     cell_width = width / cols
     tile_width = min(width, max(96, int(round(width * tile_scale))))
-    tile_height = min(height, max(96, int(round(height * tile_scale))))
+    tile_height = min(region_height, max(96, int(round(region_height * tile_scale))))
 
     candidates: list[tuple[float, int, int, int, int]] = []
     for row in range(rows):
         for col in range(cols):
             x1 = int(round(col * cell_width))
-            y1 = int(round(row * cell_height))
+            y1 = region_y1 + int(round(row * cell_height))
             x2 = int(round((col + 1) * cell_width))
-            y2 = int(round((row + 1) * cell_height))
+            y2 = region_y1 + int(round((row + 1) * cell_height))
             cell = attention_map[y1:y2, x1:x2]
             if cell.size == 0:
                 continue
@@ -533,7 +554,7 @@ def build_attention_tiles(
             center_x = int(round((x1 + x2) / 2))
             center_y = int(round((y1 + y2) / 2))
             tile_x = int(np.clip(center_x - tile_width // 2, 0, max(width - tile_width, 0)))
-            tile_y = int(np.clip(center_y - tile_height // 2, 0, max(height - tile_height, 0)))
+            tile_y = int(np.clip(center_y - tile_height // 2, region_y1, max(region_y2 - tile_height, region_y1)))
             candidates.append((score, tile_x, tile_y, tile_width, tile_height))
 
     candidates.sort(key=lambda candidate: candidate[0], reverse=True)
@@ -734,6 +755,7 @@ def build_detection_artifacts(
 ) -> DetectionArtifacts:
     timing = TimingStats()
     image_height, image_width = image.shape[:2]
+    optimized_region_bottom = max(1, image_height // 2)
     start = time.perf_counter()
     original_detections = detect_people(
         image=image,
@@ -749,7 +771,7 @@ def build_detection_artifacts(
 
     start = time.perf_counter()
     attention_map = build_attention_map(image=image, detections_to_mask=original_detections)
-    tiles = build_tiles(image=image, rows=tile_rows, cols=tile_cols, overlap=tile_overlap)
+    tiles = build_upper_quadrant_tiles(image=image, cols=tile_cols, overlap=tile_overlap)
     tiles.extend(
         build_attention_tiles(
             image=image,
@@ -759,6 +781,8 @@ def build_detection_artifacts(
             cols=attention_grid_cols,
             max_tiles=attention_tiles,
             tile_scale=attention_tile_scale,
+            region_y1=0,
+            region_y2=optimized_region_bottom,
         )
     )
     tile_layout = draw_tiles_on_original(image, tiles, attention_map=attention_map)

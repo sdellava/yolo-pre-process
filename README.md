@@ -65,6 +65,7 @@ python detect_people.py --input input --output output --confidence 0.35 --model 
 - `--half`: inferenza FP16 su GPU (`auto`, `true`, `false`). Default: `auto`
 - `--tile-imgsz`: dimensione di inferenza YOLO usata sui crop/ROI. Default: `960`
 - `--min-zoom-width` e `--min-zoom-height`: se un crop e' piu' piccolo, viene ingrandito prima di passarlo a YOLO. Default: `640x480`
+- In questa branch sperimentale, la ricerca ottimizzata con tile viene limitata ai due quadranti superiori dell'immagine; YOLO full-frame continua invece a girare sull'intero frame.
 
 ## Output
 
@@ -89,7 +90,7 @@ Durante l'esecuzione, per ogni immagine vengono stampati anche i tempi in millis
 - Lo script disegna bounding box solo per la classe `person`.
 - Se nell'immagine non ci sono persone, il file di output viene comunque salvato senza box.
 - La prima esecuzione crea una cartella locale `.ultralytics` nel progetto per evitare problemi di permessi su Windows.
-- Per migliorare il recall delle persone piccole, lo script esegue YOLO sia sul frame completo sia su tile sovrapposti ad alta risoluzione e poi fonde i box simili.
-- Dopo YOLO full-frame, una pre-analisi leggera costruisce una mappa di attenzione basata su gradienti, bordi e micro-texture; le persone gia' trovate vengono attenuate nella mappa, cosi' i crop extra puntano alle zone ancora irrisolte.
+- Per migliorare il recall delle persone piccole, lo script esegue YOLO sia sul frame completo sia sui due quadranti superiori ad alta risoluzione e poi fonde i box simili.
+- Dopo YOLO full-frame, una pre-analisi leggera costruisce una mappa di attenzione basata su gradienti, bordi e micro-texture; le persone gia' trovate vengono attenuate nella mappa, cosi' i crop extra puntano alle zone ancora irrisolte nella meta' alta del frame.
 - I crop piu' piccoli di `640x480` vengono zoomati prima dell'inferenza e analizzati con una `imgsz` piu' alta, in modo che persone lontane occupino piu' celle utili nelle feature map di YOLO.
 - Le detection troppo vicine al bordo interno di un tile vengono scartate per ridurre box tagliati e duplicati.
