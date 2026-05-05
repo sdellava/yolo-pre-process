@@ -118,8 +118,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--tile-imgsz",
         type=int,
-        default=960,
-        help="YOLO inference size for zoomed tile/ROI images. Default: 960",
+        default=640,
+        help="YOLO inference size for quadrant images. Default: 640",
     )
     parser.add_argument(
         "--device",
@@ -360,27 +360,23 @@ def detect_people(
     return detections
 
 
-def zoom_image_for_yolo(
+def resize_tile_for_yolo(
     image: np.ndarray,
-    min_width: int,
-    min_height: int,
-    max_scale: float,
-) -> tuple[np.ndarray, float]:
+    target_width: int,
+    target_height: int,
+) -> tuple[np.ndarray, float, float]:
     height, width = image.shape[:2]
     if width <= 0 or height <= 0:
-        return image, 1.0
+        return image, 1.0, 1.0
 
-    scale = max(min_width / width, min_height / height, 1.0)
-    scale = min(scale, max(max_scale, 1.0))
-    if scale <= 1.01:
-        return image, 1.0
+    target_width = max(1, target_width)
+    target_height = max(1, target_height)
+    if width == target_width and height == target_height:
+        return image, 1.0, 1.0
 
-    zoomed = cv2.resize(
-        image,
-        (int(round(width * scale)), int(round(height * scale))),
-        interpolation=cv2.INTER_CUBIC,
-    )
-    return zoomed, scale
+    interpolation = cv2.INTER_AREA if target_width < width or target_height < height else cv2.INTER_CUBIC
+    resized = cv2.resize(image, (target_width, target_height), interpolation=interpolation)
+    return resized, target_width / width, target_height / height
 
 
 def detect_people_in_tile(
@@ -394,14 +390,13 @@ def detect_people_in_tile(
     min_zoom_height: int,
     max_zoom_scale: float,
 ) -> list[PersonDetection]:
-    zoomed_image, scale = zoom_image_for_yolo(
+    resized_image, scale_x, scale_y = resize_tile_for_yolo(
         tile.image,
-        min_width=min_zoom_width,
-        min_height=min_zoom_height,
-        max_scale=max_zoom_scale,
+        target_width=min_zoom_width,
+        target_height=min_zoom_height,
     )
     detections = detect_people(
-        image=zoomed_image,
+        image=resized_image,
         model=model,
         confidence=confidence,
         source=f"tile-{tile.index + 1}",
@@ -409,15 +404,15 @@ def detect_people_in_tile(
         device=device,
         half=half,
     )
-    if scale == 1.0:
+    if scale_x == 1.0 and scale_y == 1.0:
         return detections
 
     return [
         PersonDetection(
-            x1=int(round(detection.x1 / scale)),
-            y1=int(round(detection.y1 / scale)),
-            x2=int(round(detection.x2 / scale)),
-            y2=int(round(detection.y2 / scale)),
+            x1=int(round(detection.x1 / scale_x)),
+            y1=int(round(detection.y1 / scale_y)),
+            x2=int(round(detection.x2 / scale_x)),
+            y2=int(round(detection.y2 / scale_y)),
             score=detection.score,
             source=detection.source,
         )
@@ -458,19 +453,21 @@ def build_tiles(image: np.ndarray, rows: int, cols: int, overlap: float) -> list
     return tiles
 
 
-def build_upper_quadrant_tiles(image: np.ndarray, cols: int, overlap: float) -> list[Tile]:
+def build_quadrant_tiles(image: np.ndarray) -> list[Tile]:
     height, width = image.shape[:2]
-    upper_height = max(1, height // 2)
-    cols = max(cols, 1)
-    overlap = float(np.clip(overlap, 0.0, 0.8))
-
-    tile_width = compute_tile_length(width, cols, overlap)
-    x_starts = compute_tile_starts(width, tile_width, cols)
+    mid_x = max(1, width // 2)
+    mid_y = max(1, height // 2)
+    regions = [
+        (0, 0, mid_x, mid_y),
+        (mid_x, 0, width, mid_y),
+        (0, mid_y, mid_x, height),
+        (mid_x, mid_y, width, height),
+    ]
 
     tiles: list[Tile] = []
-    for index, x in enumerate(x_starts):
-        tile_image = image[0:upper_height, x : x + tile_width].copy()
-        tiles.append(Tile(index=index, x=x, y=0, width=tile_image.shape[1], height=tile_image.shape[0], image=tile_image))
+    for index, (x1, y1, x2, y2) in enumerate(regions):
+        tile_image = image[y1:y2, x1:x2].copy()
+        tiles.append(Tile(index=index, x=x1, y=y1, width=tile_image.shape[1], height=tile_image.shape[0], image=tile_image))
     return tiles
 
 
@@ -755,7 +752,6 @@ def build_detection_artifacts(
 ) -> DetectionArtifacts:
     timing = TimingStats()
     image_height, image_width = image.shape[:2]
-    optimized_region_bottom = max(1, image_height // 2)
     start = time.perf_counter()
     original_detections = detect_people(
         image=image,
@@ -770,22 +766,8 @@ def build_detection_artifacts(
     timing.original_yolo_ms = elapsed_ms(start)
 
     start = time.perf_counter()
-    attention_map = build_attention_map(image=image, detections_to_mask=original_detections)
-    tiles = build_upper_quadrant_tiles(image=image, cols=tile_cols, overlap=tile_overlap)
-    tiles.extend(
-        build_attention_tiles(
-            image=image,
-            start_index=len(tiles),
-            attention_map=attention_map,
-            rows=attention_grid_rows,
-            cols=attention_grid_cols,
-            max_tiles=attention_tiles,
-            tile_scale=attention_tile_scale,
-            region_y1=0,
-            region_y2=optimized_region_bottom,
-        )
-    )
-    tile_layout = draw_tiles_on_original(image, tiles, attention_map=attention_map)
+    tiles = build_quadrant_tiles(image=image)
+    tile_layout = draw_tiles_on_original(image, tiles)
     timing.attention_ms = elapsed_ms(start)
 
     tile_only_detections: list[PersonDetection] = []
@@ -928,7 +910,7 @@ def process_images(
             "     timing ms: "
             f"load={artifacts.timing.load_ms:.1f}, "
             f"orig_yolo={artifacts.timing.original_yolo_ms:.1f}, "
-            f"attention={artifacts.timing.attention_ms:.1f}, "
+            f"quadrants={artifacts.timing.attention_ms:.1f}, "
             f"tile_yolo={artifacts.timing.tile_yolo_ms:.1f}, "
             f"merge={artifacts.timing.merge_ms:.1f}, "
             f"save={artifacts.timing.save_ms:.1f}, "

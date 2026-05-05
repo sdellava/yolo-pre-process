@@ -63,23 +63,23 @@ python detect_people.py --input input --output output --confidence 0.35 --model 
 - `--line-width`: spessore dei bounding box
 - `--device`: device di inferenza (`auto`, `cpu`, `cuda:0`). Default: `auto`
 - `--half`: inferenza FP16 su GPU (`auto`, `true`, `false`). Default: `auto`
-- `--tile-imgsz`: dimensione di inferenza YOLO usata sui crop/ROI. Default: `960`
-- `--min-zoom-width` e `--min-zoom-height`: se un crop e' piu' piccolo, viene ingrandito prima di passarlo a YOLO. Default: `640x480`
-- In questa branch sperimentale, la ricerca ottimizzata con tile viene limitata ai due quadranti superiori dell'immagine; YOLO full-frame continua invece a girare sull'intero frame.
+- `--tile-imgsz`: dimensione di inferenza YOLO usata sui quadranti. Default: `640`
+- `--min-zoom-width` e `--min-zoom-height`: dimensione a cui ogni quadrante viene ridimensionato prima di YOLO. Default: `640x480`
+- In questa branch sperimentale light non viene cercata alcuna zona di attenzione: lo script usa sempre i quattro quadranti fissi del frame 1080p.
 
 ## Output
 
 Per ogni immagine di input, lo script salva quattro file in `output`:
 
 - `nomefile_A.jpg`: YOLO sull'immagine originale con bounding box
-- `nomefile_B.jpg`: overlay della mappa di attenzione con i tile base e le ROI scelte dalla pre-analisi leggera
+- `nomefile_B.jpg`: layout dei quattro quadranti usati dalla pipeline light
 - `nomefile_C.jpg`: rilevazioni YOLO provenienti solo dai tile, riportate sull'immagine originale
 - `nomefile_D.jpg`: merge finale dei box full-frame + tile riportato sull'immagine originale
 
 Durante l'esecuzione, per ogni immagine vengono stampati anche i tempi in millisecondi:
 
 - `orig_yolo`: latenza del solo YOLO sull'immagine originale
-- `attention`: costruzione mappa di attenzione e scelta ROI
+- `quadrants`: preparazione dei quattro quadranti fissi
 - `tile_yolo`: inferenza YOLO sui crop/ROI
 - `merge`: fusione dei bounding box e disegno degli output
 - `save`: scrittura dei quattro file di output
@@ -90,7 +90,7 @@ Durante l'esecuzione, per ogni immagine vengono stampati anche i tempi in millis
 - Lo script disegna bounding box solo per la classe `person`.
 - Se nell'immagine non ci sono persone, il file di output viene comunque salvato senza box.
 - La prima esecuzione crea una cartella locale `.ultralytics` nel progetto per evitare problemi di permessi su Windows.
-- Per migliorare il recall delle persone piccole, lo script esegue YOLO sia sul frame completo sia sui due quadranti superiori ad alta risoluzione e poi fonde i box simili.
-- Dopo YOLO full-frame, una pre-analisi leggera costruisce una mappa di attenzione basata su gradienti, bordi e micro-texture; le persone gia' trovate vengono attenuate nella mappa, cosi' i crop extra puntano alle zone ancora irrisolte nella meta' alta del frame.
-- I crop piu' piccoli di `640x480` vengono zoomati prima dell'inferenza e analizzati con una `imgsz` piu' alta, in modo che persone lontane occupino piu' celle utili nelle feature map di YOLO.
+- Per migliorare il recall delle persone piccole, lo script esegue YOLO sia sul frame completo sia sui quattro quadranti ridimensionati a `640x480` e poi fonde i box simili.
+- Questa variante light evita la mappa di attenzione: e' meno adattiva, ma piu' semplice e prevedibile per misurare la latenza.
+- Ogni quadrante viene ridimensionato a `640x480` prima dell'inferenza, poi i bounding box vengono riportati alle coordinate del quadrante originale e infine al frame completo.
 - Le detection troppo vicine al bordo interno di un tile vengono scartate per ridurre box tagliati e duplicati.
