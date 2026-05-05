@@ -17,6 +17,27 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
+## GPU NVIDIA
+
+Per usare una GPU NVIDIA serve una build CUDA di PyTorch. Se `torch.cuda.is_available()` risulta `False`, installa PyTorch CUDA nell'ambiente virtuale:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install --upgrade --force-reinstall torch torchvision --index-url https://download.pytorch.org/whl/cu118
+```
+
+Poi esegui il detector con:
+
+```powershell
+.\.venv\Scripts\python.exe detect_people.py --input demo_dashcam_images --output output --device cuda:0
+```
+
+Lo script supporta:
+
+- `--device auto`: usa CUDA se disponibile, altrimenti CPU
+- `--device cuda:0`: forza la prima GPU NVIDIA
+- `--device cpu`: forza la CPU
+- `--half auto`: usa FP16 automaticamente su CUDA
+
 ## Uso
 
 Metti una o piu' immagini dentro `input`, poi esegui:
@@ -40,6 +61,8 @@ python detect_people.py --input input --output output --confidence 0.35 --model 
 - `--confidence`: soglia minima di confidenza
 - `--model`: modello YOLO da usare (`yolov8n.pt`, `yolov8s.pt` o un file locale)
 - `--line-width`: spessore dei bounding box
+- `--device`: device di inferenza (`auto`, `cpu`, `cuda:0`). Default: `auto`
+- `--half`: inferenza FP16 su GPU (`auto`, `true`, `false`). Default: `auto`
 - `--tile-imgsz`: dimensione di inferenza YOLO usata sui crop/ROI. Default: `960`
 - `--min-zoom-width` e `--min-zoom-height`: se un crop e' piu' piccolo, viene ingrandito prima di passarlo a YOLO. Default: `640x480`
 

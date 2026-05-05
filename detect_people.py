@@ -13,6 +13,7 @@ os.environ.setdefault("YOLO_CONFIG_DIR", str(PROJECT_ROOT / ".ultralytics"))
 
 import cv2
 import numpy as np
+import torch
 from PIL import Image
 from ultralytics import YOLO
 
@@ -120,6 +121,17 @@ def parse_args() -> argparse.Namespace:
         default=960,
         help="YOLO inference size for zoomed tile/ROI images. Default: 960",
     )
+    parser.add_argument(
+        "--device",
+        default="auto",
+        help="Inference device: auto, cpu, cuda, cuda:0, etc. Default: auto",
+    )
+    parser.add_argument(
+        "--half",
+        choices=("auto", "true", "false"),
+        default="auto",
+        help="Use FP16 inference when supported. Default: auto",
+    )
     parser.add_argument("--tile-rows", type=int, default=2, help="Number of vertical tile bands. Default: 2")
     parser.add_argument("--tile-cols", type=int, default=2, help="Number of horizontal tile bands. Default: 2")
     parser.add_argument(
@@ -183,6 +195,41 @@ def parse_args() -> argparse.Namespace:
         help="Maximum pre-YOLO tile upscale factor. Default: 2.5",
     )
     return parser.parse_args()
+
+
+def resolve_device(requested_device: str) -> str:
+    requested_device = requested_device.strip().lower()
+    if requested_device == "auto":
+        return "cuda:0" if torch.cuda.is_available() else "cpu"
+    if requested_device.startswith("cuda") and not torch.cuda.is_available():
+        print("[WARN] CUDA requested but this Python environment cannot use CUDA. Falling back to CPU.")
+        return "cpu"
+    return requested_device
+
+
+def resolve_half_mode(requested_half: str, device: str) -> bool:
+    if requested_half == "true":
+        return device.startswith("cuda")
+    if requested_half == "false":
+        return False
+    return device.startswith("cuda")
+
+
+def configure_torch_for_device(device: str) -> None:
+    if not device.startswith("cuda"):
+        return
+    torch.backends.cudnn.benchmark = True
+    try:
+        torch.set_float32_matmul_precision("high")
+    except Exception:
+        pass
+
+
+def describe_device(device: str, half: bool) -> str:
+    if device.startswith("cuda") and torch.cuda.is_available():
+        device_index = torch.cuda.current_device()
+        return f"{device} ({torch.cuda.get_device_name(device_index)}), half={half}"
+    return f"{device}, half={half}"
 
 
 def collect_images(input_path: Path) -> list[Path]:
@@ -279,11 +326,15 @@ def detect_people(
     confidence: float,
     source: str,
     imgsz: int,
+    device: str,
+    half: bool,
 ) -> list[PersonDetection]:
     results = model.predict(
         source=image,
         conf=confidence,
         imgsz=imgsz,
+        device=device,
+        half=half,
         verbose=False,
     )
     result = results[0]
@@ -337,6 +388,8 @@ def detect_people_in_tile(
     model: YOLO,
     confidence: float,
     tile_imgsz: int,
+    device: str,
+    half: bool,
     min_zoom_width: int,
     min_zoom_height: int,
     max_zoom_scale: float,
@@ -353,6 +406,8 @@ def detect_people_in_tile(
         confidence=confidence,
         source=f"tile-{tile.index + 1}",
         imgsz=tile_imgsz,
+        device=device,
+        half=half,
     )
     if scale == 1.0:
         return detections
@@ -661,6 +716,8 @@ def build_detection_artifacts(
     confidence: float,
     imgsz: int,
     tile_imgsz: int,
+    device: str,
+    half: bool,
     line_width: int,
     tile_rows: int,
     tile_cols: int,
@@ -684,6 +741,8 @@ def build_detection_artifacts(
         confidence=confidence,
         source="full",
         imgsz=imgsz,
+        device=device,
+        half=half,
     )
     original_annotated = draw_detections(image, original_detections, line_width)
     timing.original_yolo_ms = elapsed_ms(start)
@@ -713,6 +772,8 @@ def build_detection_artifacts(
             model=model,
             confidence=confidence,
             tile_imgsz=tile_imgsz,
+            device=device,
+            half=half,
             min_zoom_width=min_zoom_width,
             min_zoom_height=min_zoom_height,
             max_zoom_scale=max_zoom_scale,
@@ -755,6 +816,8 @@ def process_images(
     confidence: float,
     imgsz: int,
     tile_imgsz: int,
+    device: str,
+    half: bool,
     line_width: int,
     tile_rows: int,
     tile_cols: int,
@@ -770,6 +833,9 @@ def process_images(
     max_zoom_scale: float,
 ) -> None:
     model = YOLO(model_name)
+    configure_torch_for_device(device)
+    model.to(device)
+    print(f"Inference device: {describe_device(device, half)}")
     total_original_people = 0
     total_tile_people = 0
     total_merged_people = 0
@@ -788,6 +854,8 @@ def process_images(
             confidence=confidence,
             imgsz=imgsz,
             tile_imgsz=tile_imgsz,
+            device=device,
+            half=half,
             line_width=line_width,
             tile_rows=tile_rows,
             tile_cols=tile_cols,
@@ -874,6 +942,8 @@ def main() -> None:
     args = parse_args()
     input_path = Path(args.input).expanduser().resolve()
     output_dir = Path(args.output).expanduser().resolve()
+    device = resolve_device(args.device)
+    half = resolve_half_mode(args.half, device)
 
     images = collect_images(input_path)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -886,6 +956,8 @@ def main() -> None:
         confidence=args.confidence,
         imgsz=args.imgsz,
         tile_imgsz=args.tile_imgsz,
+        device=device,
+        half=half,
         line_width=args.line_width,
         tile_rows=args.tile_rows,
         tile_cols=args.tile_cols,
