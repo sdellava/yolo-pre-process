@@ -1,0 +1,14 @@
+.venv/
+.ultralytics/
+__pycache__/
+*.py[cod]
+*.pyo
+
+output/
+yolov8n.pt
+.codex_backup/
+
+runs/
+*.onnx
+*.engine
+*.torchscript

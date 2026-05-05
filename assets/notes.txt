@@ -1,0 +1,7 @@
+Questo progetto usa YOLO per trovare persone e salvare immagini con bounding box.
+
+Demo aggiornate il 2026-05-05:
+- demo_dashcam_images/dashcam_pedestrian1.jpg -> Pexels / Josh Hild
+- demo_dashcam_images/dashcam_pedestrian2.jpg -> Pexels / Tumsia Daniel
+- demo_dashcam_images/dashcam_pedestrian3.jpg -> Pexels / Alvaro Matzumura
+- demo_dashcam_images/dashcam_pedestrian4.jpg -> Pexels / NHP CO
