@@ -197,6 +197,21 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def resolve_model_name(requested_model: str) -> str:
+    model_name = requested_model.strip()
+    if not model_name:
+        raise ValueError("Model cannot be empty.")
+
+    model_path = Path(model_name).expanduser()
+    is_path_like = model_path.is_absolute() or any(separator in model_name for separator in ("/", "\\"))
+    if model_path.is_file():
+        return str(model_path.resolve())
+    if is_path_like:
+        raise FileNotFoundError(f"Model path does not exist: {model_path}")
+
+    return model_name
+
+
 def resolve_device(requested_device: str) -> str:
     requested_device = requested_device.strip().lower()
     if requested_device == "auto":
@@ -832,6 +847,7 @@ def process_images(
     min_zoom_height: int,
     max_zoom_scale: float,
 ) -> None:
+    print(f"Loading YOLO model: {model_name}")
     model = YOLO(model_name)
     configure_torch_for_device(device)
     model.to(device)
@@ -942,6 +958,7 @@ def main() -> None:
     args = parse_args()
     input_path = Path(args.input).expanduser().resolve()
     output_dir = Path(args.output).expanduser().resolve()
+    model_name = resolve_model_name(args.model)
     device = resolve_device(args.device)
     half = resolve_half_mode(args.half, device)
 
@@ -952,7 +969,7 @@ def main() -> None:
         images=images,
         input_root=input_path,
         output_dir=output_dir,
-        model_name=args.model,
+        model_name=model_name,
         confidence=args.confidence,
         imgsz=args.imgsz,
         tile_imgsz=args.tile_imgsz,

@@ -52,6 +52,12 @@ Per elaborare una singola immagine:
 python detect_people.py --input C:\percorso\immagine.jpg --output output
 ```
 
+Per usare un modello `.pt` locale diverso:
+
+```powershell
+python detect_people.py --input input --output output --model C:\percorso\custom_model.pt
+```
+
 ## Opzioni utili
 
 ```powershell
@@ -59,7 +65,7 @@ python detect_people.py --input input --output output --confidence 0.35 --model 
 ```
 
 - `--confidence`: soglia minima di confidenza
-- `--model`: modello YOLO da usare (`yolov8n.pt`, `yolov8s.pt` o un file locale)
+- `--model`: modello YOLO da usare (`yolov8n.pt`, `yolov8s.pt` o un file `.pt` locale)
 - `--line-width`: spessore dei bounding box
 - `--device`: device di inferenza (`auto`, `cpu`, `cuda:0`). Default: `auto`
 - `--half`: inferenza FP16 su GPU (`auto`, `true`, `false`). Default: `auto`
