@@ -31,6 +31,12 @@ Per elaborare una singola immagine:
 python detect_people.py --input C:\percorso\immagine.jpg --output output
 ```
 
+Per usare un modello `.pt` locale diverso:
+
+```powershell
+python detect_people.py --input input --output output --model C:\percorso\custom_model.pt
+```
+
 ## Opzioni utili
 
 ```powershell
@@ -38,7 +44,7 @@ python detect_people.py --input input --output output --confidence 0.35 --model 
 ```
 
 - `--confidence`: soglia minima di confidenza
-- `--model`: modello YOLO da usare (`yolov8n.pt`, `yolov8s.pt` o un file locale)
+- `--model`: modello YOLO da usare (`yolov8n.pt`, `yolov8s.pt` o un file `.pt` locale)
 - `--line-width`: spessore dei bounding box
 - `--tile-imgsz`: dimensione di inferenza YOLO usata sui crop/ROI. Default: `960`
 - `--min-zoom-width` e `--min-zoom-height`: se un crop e' piu' piccolo, viene ingrandito prima di passarlo a YOLO. Default: `640x480`
